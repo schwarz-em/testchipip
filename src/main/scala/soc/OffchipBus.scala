@@ -96,8 +96,6 @@ trait CanHaveSwitchableOffchipBus { this: BaseSubsystem =>
 }
 
 trait AddressTranslatorParams {
-  // def blockRange: AddressSet
-  // def replicationBase: Option[BigInt]
   def onchipBase: BigInt
   def size: BigInt
   def offchipBase: BigInt // This chip's base address in the global range
@@ -110,8 +108,6 @@ case class InwardAddressTranslatorParams(
   offset: BigInt,
   base: BigInt = 0x0L // Default Chipyard Base
 ) extends AddressTranslatorParams {
-  // def blockRange = AddressSet(base, offset - 1) 
-  // def replicationBase = Some(offset * (chipID + 1))
   def onchipBase = base
   def size = offset - 1
   def offchipBase = offset * (chipID + 1)
@@ -123,24 +119,10 @@ case class OutwardAddressTranslatorParams(
   size: BigInt
 ) extends AddressTranslatorParams {
   def onchipBase = onchipAddr
-  //def size = size
   def offchipBase = offchipAddr
-  // def blockRange = AddressSet(offchipAddr, size)
-  // def replicationBase = Some(onchipAddr)
 }
 
-// TODO: Don't use base as region size, better support for more than 2 chiplets
-// Probably this just needs to take in more params
 case class AddressTranslator(params: AddressTranslatorParams)(implicit p: Parameters) extends LazyModule {
-  // val module_side = params.replicationBase.map { base =>
-  //   val baseRegion   = AddressSet(0, params.size) // Default Chipyard SoC memory space
-  //   val replicator   = LazyModule(new RegionReplicator(ReplicatedRegion(baseRegion, baseRegion.widen(base))))
-  //   val prefixSource = BundleBridgeSource[UInt](() => UInt(1.W))
-  //   replicator.prefix := prefixSource
-  //   InModuleBody { prefixSource.bundle := 0.U(1.W) } // prefix is unused for TL uncached, so this is ok
-  //   replicator.node
-  // }.getOrElse { TLTempNode() }
-
   // Create a copy of this chip's onchip address range at a higher base address
   val module_side = {
     val replicator = LazyModule(new RegionReplicator(ReplicatedRegion(params.onchipRange, params.onchipRange.widen(params.offchipBase))))
@@ -155,17 +137,6 @@ case class AddressTranslator(params: AddressTranslatorParams)(implicit p: Parame
     case OutwardAddressTranslatorParams(_,_,_) => TLFilter(TLFilter.mSubtract(params.onchipRange))(p)
     // Translate down 
     case InwardAddressTranslatorParams(_,_,_) => TLFilter(TLFilter.mSubtract(params.offchipRange))(p)
-    // case InwardAddressTranslatorParams(_,_,_) => {
-    //   def fn(addr: AddressSet) = {
-    //     //if the address is in the offchip range, translate it to the onchip range
-    //     if (params.offchipRange.contains(addr.base)) {
-    //       addr.base - params.offchipBase + params.onchipBase
-    //     } else {
-    //       addr.base
-    //     }
-    //   }
-    //   TLMap(fn)(p)
-    // }
   }
 
   def apply(node : TLNode) : TLNode = params match {

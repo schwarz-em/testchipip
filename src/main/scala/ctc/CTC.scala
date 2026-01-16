@@ -29,28 +29,18 @@ object CTCCommand {
 }
 
 case class CTCParams(
-  // onchipAddr: BigInt = 0x100000000L,                      // addresses that get routed here from THIS chip
-  // offchipAddr: BigInt = 0x0,                              // addresses that this ctc device can access on the OTHER chip
-  // size: BigInt = ((1L << 10) - 1),                        // 1024 bytes
   translationParams: AddressTranslatorParams = OutwardAddressTranslatorParams(onchipAddr = 0x1000000000L, offchipAddr = 0x0L, size = ((1L << 32) - 1)),
-  offchip: Option[AddressSet] = None,
+  offchip: Seq[AddressSet] = Nil,
   managerBus: Option[TLBusWrapperLocation] = Some(SBUS),
   clientBus: Option[TLBusWrapperLocation] = Some(SBUS),
   phyFreqMHz: Int = 100,
   noPhy: Boolean = false
 ) {
-  def offchipAddr = translationParams match {
-    case OutwardAddressTranslatorParams(_,offchipAddr,_) => offchipAddr
+  def offchipRange = translationParams match {
+    case OutwardAddressTranslatorParams(_,_,_) => Seq(translationParams.offchipRange)
     case InwardAddressTranslatorParams(_,_,_) => {
-      require(offchip != None)
-      offchip.get.base // there is probs a less dumb way to do this
-    }
-  }
-  def size = translationParams match {
-    case OutwardAddressTranslatorParams(_,_,size) => size
-    case InwardAddressTranslatorParams(_,_,_) => {
-      require(offchip != None)
-      offchip.get.mask // there is probs a less dumb way to do this
+      require(offchip != Nil)
+      offchip
     }
   }
 }
@@ -95,16 +85,10 @@ trait CanHavePeripheryCTC { this: BaseSubsystem =>
       require(slave_bus.dtsFrequency == master_bus.dtsFrequency,
         s"Mismatching slave freq ${slave_bus.dtsFrequency} != master freq ${master_bus.dtsFrequency}")
 
-      // val (offchipAddr, size) = params.translationParams match {
-      //   case OutwardAddressTranslatorParams(_,offchipAddr,size) => (offchipAddr, size)
-      //   // Translate incoming requests
-      //   case InwardAddressTranslatorParams(_,offset,_) => (offset, (offset * 3) - 1) //hardcoding for 3 chips for now...
-      // }
-
       // a TL master/client device
       val ctc2tl = ctc_domain { LazyModule(new CTCToTileLink(portId=id)(p)) }
       // a TL slave/manager device
-      val tl2ctc = ctc_domain { LazyModule(new TileLinkToCTC(baseAddr=params.offchipAddr, size=params.size)(p)) }
+      val tl2ctc = ctc_domain { LazyModule(new TileLinkToCTC(addrRegion=params.offchipRange)(p)) }
 
       params.translationParams match {
         // Translate outgoing requests
@@ -116,11 +100,8 @@ trait CanHavePeripheryCTC { this: BaseSubsystem =>
         case InwardAddressTranslatorParams(_,_,_) => {
           slave_bus.coupleTo(portName) { tl2ctc.node := TLBuffer() := _ }
           master_bus.coupleFrom(portName) { _ := TLBuffer() := translator(ctc2tl.node) }
-          //master_bus.coupleFrom(portName) { _ := TLBuffer() := ctc2tl.node }
         }
       }
-
-      //master_bus.coupleFrom(portName) { _ := TLBuffer() := ctc2tl.node }
       
       // If we provide a clock, generate a clock domain for the outgoing clock
       val serial_tl_clock_freqMHz = CreditedSourceSyncSerialPhyParams().freqMHz
