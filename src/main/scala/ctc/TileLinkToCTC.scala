@@ -15,10 +15,14 @@ import org.chipsalliance.cde.config.{Parameters, Field}
 // to inner: sends read and write responses in TL
 class TileLinkToCTC(sinkIds: Int = 1, val beatBytes: Int = 8, baseAddr: BigInt = 0, size: BigInt = ((1L << 10) - 1), val maxBeats: Int = 4)
                   (implicit p: Parameters) extends LazyModule {
-  val addrSet = AddressSet(baseAddr, size)
+  //val addrSet = AddressSet(baseAddr, size)
+  //AddressSet(0x100000000L, 0x300000000L - 1)
+  val addrSet = Seq(AddressSet(0x100000000L, 0x100000000L - 1), AddressSet(0x200000000L, 0x100000000L - 1), AddressSet(0x300000000L, 0x100000000L - 1))
+  val memDevice = new SimpleDevice("ctc-lbwif", Nil)
   val node = TLManagerNode(Seq(TLSlavePortParameters.v1(
     managers = Seq(TLSlaveParameters.v2(
-      address = Seq(addrSet),
+      address = addrSet,
+      resources = memDevice.reg,
       regionType = RegionType.UNCACHED,
       supports = TLMasterToSlaveTransferSizes(
         putFull = TransferSizes(1, beatBytes*maxBeats), 
